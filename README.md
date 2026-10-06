@@ -23,7 +23,8 @@ flight**: only the agent's commands fly it. The project brief is [claude.md](cla
 ## 1. Quick start (Windows PowerShell)
 
 ```powershell
-cd "C:\Users\gurka\Desktop\RL-main\3d env"
+cd "C:\Users\gurka\Desktop\RL-3D"              # the project folder (wherever you cloned it)
+py -3.13 -m venv .venv                         # first time on a computer only: .venv is not in git
 .venv\Scripts\Activate.ps1                     # if blocked: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
 python -m pip install -r requirements.txt      # pinned versions (torch is the CPU build)
 python -m pytest                               # headless test suite, ~1 minute
@@ -194,7 +195,7 @@ At 8 processes, 10M environment steps took about 1.2 h of simulation.
 
 **Your decisions:**
 - No human or manual flight. The brief is updated: §8, the M1 row and §14.
-- No `git init`. Episode logs (M2) will record `"unversioned"`.
+- Git: the project has been a git repo since 2026-10-06. What episode logs (M2) record as the code version is Open decision O5.
 - Fixed thrust envelope; blowdown not modelled.
 - Notebooks used alongside the package, not instead of it.
 - Run locally.

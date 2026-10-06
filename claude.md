@@ -3,6 +3,31 @@
 Viking-class lander · Mars terminal descent · MuJoCo · Stable-Baselines3. Decisions were made with the user in a design discussion (Oct 2026).
 **Locked** = fixed. **Open** = ask the user before the milestone that needs it. Sources: §15 (S1–S11).
 
+## Status — read first (updated 2026-10-06)
+A new session continues from this file, `README.md` and `docs/` alone; nothing depends on earlier chat logs or on `~/.claude`.
+- **Done:**
+  - M1 (2026-10-05), then the same day's simplification: `.env` cut from 155 to 41 facts (D4, D5, D7, D12, D13, D15–D17). `python -m pytest` passes (37 headless tests).
+  - Code guide v2 (2026-10-06), `docs/Mars_Lander_RL_code_guide_v2.pdf`. Section 2 covers every `.env` variable: why it was kept, which functions read it, and where each of the old 155 keys went. Sections 3–6 cover the call tree from `main()` in in-order (LVR).
+  - No agent has been trained yet (that is M4).
+- **Next: M2** (§9, §13). No M2 code exists yet. Before writing any, settle these with the user:
+  1. O2–O5 (§3, Open).
+  2. The start state beyond the decided 200–500 m height (D16). Proposal, all assumed:
+     - falling at 10–30 m/s and moving sideways at 0–10 m/s;
+     - tilted 0–15°, at any heading, turning at up to 2°/s;
+     - dust storms in 30 % of episodes.
+
+     Details are under "Proposed for M2" in `docs/env_variables.md`.
+- **Asked on 2026-10-06, not yet answered:** cut or keep the three variables with the weakest case ("closest calls" in guide v2)? Removing any of them barely changes the simulation.
+  - `VIKING_REF_TIPOVER_P_45DEG`: only a test reads it, to print NASA's 0.85 next to our tip-over rate.
+  - `VIKING_AERO_CDA_AXIAL_M2`: descent drag, about 13 N at 30 m/s. Using the lateral value instead adds 12 % (about 1.5 N).
+  - `VIKING_RADAR_DOPPLER_CLOCK_DEG`: only rotates the four Doppler beams about the vertical.
+- **Where things are:**
+  - `README.md`: setup, commands, how the simulation works, validation, a map of every function, the tests.
+  - `docs/env_variables.md`: each variable and why it stays, the error-data review, the M2 proposal, and advice on calm-versus-storm training.
+  - The guide PDFs in `docs/`.
+  - `.env`: the facts themselves.
+- **Not in the repo:** the scripts that build the code-guide PDFs (ReportLab + PyMuPDF) and the original 155-key `.env` lived in a temporary folder on the first laptop. Without them the PDFs cannot be regenerated. Guide v2 Section 2 is the only record of the old keys.
+
 ## 0. How to work here
 - Build the milestones (§13) in order, **one at a time**. Before each: state assumptions in a few lines, ask ≤3 questions only if essential, and resolve the Open decisions it depends on.
 - After each: summarise what was built, what was run/tested and what could **not** be verified. Then stop and wait for the user's go-ahead.
@@ -10,6 +35,14 @@ Viking-class lander · Mars terminal descent · MuJoCo · Stable-Baselines3. Dec
 - Run and test what you can. If a window can't open, test headless and give exact Windows commands to run the viewer locally.
 - Every numeric parameter in config carries `source` and `status` (`published` / `derived` / `assumed`). Never present an assumed number as published.
 - Never silently change the task. If RL doesn't converge, try in this order and record each change: curriculum (lower start altitude) → potential-based reward shaping → action smoothing.
+- **Ask, don't assume** (the user, 2026-10-05: "ask me stuff do not assume if any clarifications are required"). When a request leaves a design or modelling choice open, ask instead of picking a default silently. Ask as multiple choice, with a recommended option and the measured numbers behind each option. Minor technical defaults can be stated in a plan for approval.
+- For scope changes, write the proposal (markdown) for the user to approve before implementing. Back each keep or cut with a measured effect: "measured X → verdict".
+- Keep the docs in step with the code:
+  - `README.md`: its code map must name every module, class and function, and a test checks this.
+  - `docs/env_variables.md`: update it for any `.env` change.
+  - This file: record each decision, with its date.
+- Git belongs to the user: commit, branch or push only when asked.
+- Don't close the user's other programs. If they disturb a benchmark, say so and re-run later.
 
 ## 1. Goal
 1. Realistic 3D Mars terminal-landing simulator with continuous controls and a live viewer.
@@ -17,8 +50,19 @@ Viking-class lander · Mars terminal descent · MuJoCo · Stable-Baselines3. Dec
 3. Later: fuzz-testing study that searches for initial conditions/environments where the agent fails; the classical controller is the validity check.
 
 ## 2. Setup
-- Windows 11 · Python **3.13.5** (project `.venv`, pinned in README) · GPU RTX 3050 6 GB or Google Colab. **Training runs on CPU.**
+- First built on Windows 11, i5-12450H (8 cores), RTX 3050 6 GB · Python **3.13.5** in the project `.venv`, every package pinned in `requirements.txt` · Google Colab optional. **Training runs on CPU.**
 - MuJoCo from pip; **pin the exact version** in `requirements.txt` and write it into every episode log. Headless/Colab: `MUJOCO_GL=egl`.
+- **On a new computer:** install Python 3.13.5 (python.org), then run the commands below in PowerShell from the project folder. `.venv/`, `runs/` and the NASA PDFs are not in git.
+  ```powershell
+  py -3.13 -m venv .venv
+  .venv\Scripts\python -m pip install -r requirements.txt
+  .venv\Scripts\python -m ipykernel install --user --name mars-lander --display-name "Python 3.13 (.venv mars-lander)"  # notebook kernel
+  .venv\Scripts\python -m pytest                    # 37 headless tests, about 1 minute
+  .venv\Scripts\python -m scripts.fetch_sources     # optional: NASA PDFs S3-S5 into docs/sources/
+  ```
+- **Machine-specific:**
+  - The speed table in the README comes from the first laptop. Re-run `python -m scripts.benchmark` on a new machine.
+  - A replay is bit-identical only on the machine and MuJoCo version that recorded it (D10).
 
 ## 3. Decisions
 ### Locked
@@ -37,7 +81,7 @@ Viking-class lander · Mars terminal descent · MuJoCo · Stable-Baselines3. Dec
 | D11 | Control input | **No human/manual flight** (2026-10-05): only the RL agent's commands (scripted scenarios in M1) fly the lander, against the environment conditions. |
 | D12 | Legs | **Rigid legs** ending in three footpad contact spheres. A leg breaks if first contact is faster than 3.34 m/s down or 1.22 m/s sideways (Viking's leg design limits, S5). (2026-10-05; replaces the hinge + crush-strut model; no TESS, strut or load limiters.) |
 | D13 | Thrust envelope | Fixed 276–2,667 N per engine; S3's blowdown thrust decay **not modelled** (2026-10-05). |
-| D14 | Tooling | Facts live in `.env` (value · unit · status · source); only what the code reads, each explained in `docs/env_variables.md`, later facts parked as comments. Run locally (i5-12450H, CPU training); notebooks only for exploration/analysis next to the package. No git repo: logs record `"unversioned"`. |
+| D14 | Tooling | Facts live in `.env` (value · unit · status · source); only what the code reads, each explained in `docs/env_variables.md`, later facts parked as comments. Run locally, training on CPU; notebooks only for exploration/analysis next to the package. Git: the user put the project in a repo (`main`) on 2026-10-06. What episode logs record as the code version is O5. |
 | D15 | Simplified vehicle | (2026-10-05) CG on the centre line at 0.79 m, never moves; mass = 573.1 kg dry + propellant; constant inertia (S4 touchdown values). Constant air density; one steady wind per episode (calm = none; storms 17–30 m/s), no gusts. Ideal IMU at the CG; one radar altimeter; Viking's radar errors on by default. Thrust misalignment (0.044°) is kept as the only steady disturbance. |
 | D16 | Episode start | (2026-10-05, resolves O1) Random height 200–500 m; Viking's earlier phases (parachute, 1.4 km ignition, handover) dropped. Speed, tilt and rate ranges proposed at M2; 60 kg propellant at the start (assumed, check at M3). |
 | D17 | Weather in training | (2026-10-05) One agent learns calm and dust-storm landings from mixed episodes (~30 % storms, assumed) and is not told which; scored separately on calm and storm test sets. |
@@ -49,6 +93,7 @@ Rejected (context only): Moon/Vikram (possible future preset), single gimballed 
 | O2 | Agent actions | Always + engines-off (D7). (a) Raw: 3 throttles. (b) Allocator: total thrust + 2 torques → mixer → engines. | Undecided | M2 |
 | O3 | Pad radius, arena bounds, timeout, tilt limit | — | Propose at M2 (Viking's 3σ touchdown attitude was under ~2°, S4; parked: S3's 5° and 7°/s) | M2 |
 | O4 | Observations (including how the agent senses touchdown), reward | Sensor noise decided: Viking's radar errors on (D15). | Propose at M2 | M2 |
+| O5 | Code version in episode logs | (a) Commit hash, plus a flag for uncommitted changes. (b) Keep `"unversioned"`. | (a): a repo exists since 2026-10-06, and replay (D10) needs to know which code wrote a log | M2 |
 
 O1 (episode start) was decided on 2026-10-05: see D16.
 
