@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+
+# virtual environment
+.venv/
+
+# outputs (videos, logs, checkpoints, TensorBoard)
+runs/
+
+# downloaded source PDFs (re-download with: python -m scripts.fetch_sources)
+docs/sources/*.pdf
+
+# NOTE: .env is NOT ignored on purpose - it holds the physical facts, no secrets.

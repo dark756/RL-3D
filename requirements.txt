@@ -1,0 +1,21 @@
+# Mars Lander RL - pinned dependencies (Python 3.13.5, Windows 11; verified 2026-10-05)
+# Install into the project venv:   .venv\Scripts\python -m pip install -r requirements.txt
+
+# --- simulator, viewer, video (M1) ---
+mujoco==3.14.0
+numpy==2.5.3
+imageio==2.38.0
+imageio-ffmpeg==0.6.0
+pillow==12.3.0
+pytest==9.1.1
+
+# --- reinforcement learning (M2-M5); installed now so the environment is ready ---
+gymnasium==1.3.0
+stable-baselines3==2.9.0
+torch==2.14.1          # PyPI's Windows wheel is the CPU build (training runs on CPU, D9)
+tensorboard==2.21.0
+
+# --- notebooks (exploration and analysis) ---
+ipykernel==7.4.0       # lets VS Code run notebooks with the .venv kernel
+matplotlib==3.11.2
+nbconvert==7.17.1      # runs notebooks headless: jupyter nbconvert --to notebook --execute
