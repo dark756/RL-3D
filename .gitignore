@@ -14,3 +14,7 @@ runs/
 docs/sources/*.pdf
 
 # NOTE: .env is NOT ignored on purpose - it holds the physical facts, no secrets.
+
+# only README.md is published; other markdown (project brief, docs, tool notes) stays local
+*.md
+!/README.md
