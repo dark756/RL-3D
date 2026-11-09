@@ -6,20 +6,22 @@ import numpy as np
 import pytest
 
 from conftest import CLEAN
-from lander.aero import drag_areas, drag_force_body, wind_vector
+from lander.aero import drag_force, wind_vector
 from lander.vehicle import Command
 
 
 def test_drag_calm_versus_storm(cfg):
-    cda, rho = drag_areas(cfg), cfg.mars.air_density_kgpm3
+    cda, rho = cfg.aero.cda_m2, cfg.mars.air_density_kgpm3
     # calm air, Viking's 2.44 m/s final descent: a tenth of a newton
-    assert np.abs(drag_force_body(np.array([0.0, 0.0, 2.44]), rho, cda)).max() < 0.2
+    assert np.abs(drag_force(np.array([0.0, 0.0, 2.44]), rho, cda)).max() < 0.2
+    # descending at 30 m/s: ~14.5 N, under 1 % of the weight
+    assert 14.0 < drag_force(np.array([0.0, 0.0, -30.0]), rho, cda)[2] < 15.0
     # dust storm 17-30 m/s (S11) on a hovering lander: 5-15 N sideways, under 1 % of its weight
     low, high = cfg.wind.storm_mps
-    f_low = drag_force_body(np.array([-low, 0.0, 0.0]), rho, cda)[0]
-    f_high = drag_force_body(np.array([-high, 0.0, 0.0]), rho, cda)[0]
+    f_low = drag_force(np.array([-low, 0.0, 0.0]), rho, cda)[0]
+    f_high = drag_force(np.array([-high, 0.0, 0.0]), rho, cda)[0]
     assert 4.0 < f_low < f_high < 15.0
-    assert drag_force_body(np.array([10.0, 0.0, 0.0]), 0.0, cda) == pytest.approx(np.zeros(3))
+    assert drag_force(np.array([10.0, 0.0, 0.0]), 0.0, cda) == pytest.approx(np.zeros(3))
     assert wind_vector(20.0, 90.0) == pytest.approx([0.0, 20.0, 0.0], abs=1e-12)
 
 

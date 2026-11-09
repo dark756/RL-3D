@@ -28,8 +28,8 @@ def test_every_fact_has_status_and_source(cfg):
 
 def test_parked_facts_are_comments_only():
     text = DEFAULT_ENV_PATH.read_text(encoding="utf-8")
-    assert "# VIKING_SEQ_TERMINAL_SPEED_MPS=2.44" in text           # kept for M3, with its source
-    assert not any(k.startswith("VIKING_SEQ_") for k in parse_env_file(DEFAULT_ENV_PATH))
+    assert "# VIKING_REQ_STABILITY_PROB=0.997" in text              # kept for M5, with its source
+    assert "VIKING_REQ_STABILITY_PROB" not in parse_env_file(DEFAULT_ENV_PATH)
 
 
 def test_missing_metadata_is_rejected(tmp_path):
@@ -82,6 +82,26 @@ def test_cli_override_and_errors():
         load_config(overrides={"VIKING_ENGINE_THRUST_MIN_N": "3000"}, environ={})   # min above max
 
 
+def test_episode_and_reward_settings_are_checked():
+    with pytest.raises(ConfigError, match="EPISODE_ZONES_M"):
+        load_config(overrides={"EPISODE_ZONES_M": "20,5,200"}, environ={})          # zones must grow
+    with pytest.raises(ConfigError, match="EPISODE_CEILING_M"):
+        load_config(overrides={"EPISODE_CEILING_M": "400"}, environ={})             # below the highest start
+    with pytest.raises(ConfigError, match="EPISODE_START_DESCENT_MPS"):
+        load_config(overrides={"EPISODE_START_DESCENT_MPS": "30,10"}, environ={})   # low > high
+    with pytest.raises(ConfigError, match="REWARD_CRASH_RATIO"):
+        load_config(overrides={"REWARD_CRASH_RATIO": "1"}, environ={})
+
+
+def test_controller_settings_are_checked():
+    with pytest.raises(ConfigError, match="CTRL_TILT_MAX_DEG"):
+        load_config(overrides={"CTRL_TILT_MAX_DEG": "3,20"}, environ={})            # near the ground > above
+    with pytest.raises(ConfigError, match="CTRL_BRAKE_MPS2"):
+        load_config(overrides={"CTRL_BRAKE_MPS2": "8"}, environ={})                 # more than the axial limit allows
+    with pytest.raises(ConfigError, match="AXIAL_THROTTLE_LIMIT"):
+        load_config(overrides={"VIKING_SEQ_AXIAL_THROTTLE_LIMIT": "1.2"}, environ={})
+
+
 def test_derived_numbers_match_the_brief(cfg):
     d = {k: v[0] for k, v in derived(cfg).items()}
     assert d["mdot_per_engine_max"] == pytest.approx(1.39, abs=0.01)     # brief section 4
@@ -92,3 +112,4 @@ def test_derived_numbers_match_the_brief(cfg):
     assert d["hover_mdot_start"] == pytest.approx(1.23, abs=0.01)
     assert 14.0 < d["storm_push_max"] < 15.0                             # a 30 m/s storm pushes ~14.5 N
     assert d["cg_height_ratio"] == pytest.approx(0.566, abs=0.001)      # S4 p5
+    assert d["axial_braking_start"] == pytest.approx(7.1, abs=0.05)     # 0.84 average valve limit (S3 p99)

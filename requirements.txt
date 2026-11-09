@@ -19,3 +19,7 @@ tensorboard==2.21.0
 ipykernel==7.4.0       # lets VS Code run notebooks with the .venv kernel
 matplotlib==3.11.2
 nbconvert==7.17.1      # runs notebooks headless: jupyter nbconvert --to notebook --execute
+
+# --- code-guide PDFs (tools/code_guide) ---
+reportlab==5.0.1       # builds the PDFs
+pymupdf==1.28.2        # reads them back to check the layout and links

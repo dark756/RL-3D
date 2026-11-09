@@ -7,6 +7,8 @@ import numpy as np
 from conftest import CLEAN
 from lander.scenarios import LOW_PROPELLANT_KG, hover_then_cut
 
+NASA_TIPOVER_P_45DEG = 0.85   # published, S4 p15: tip-over probability on a 45 deg slope with Viking's crushable legs
+
 
 def _touchdown(sim, velocity):
     st = sim.state_above_ground(0.2, velocity=velocity, propellant_kg=LOW_PROPELLANT_KG)
@@ -43,9 +45,9 @@ def _slope_drops(make_sim, slope, n, seed0):
     return tipped / n
 
 
-def test_steep_slopes_tip_over_gentle_slopes_do_not(make_sim, cfg):
+def test_steep_slopes_tip_over_gentle_slopes_do_not(make_sim):
     p45 = _slope_drops(make_sim, 45.0, 12, 100)
     p10 = _slope_drops(make_sim, 10.0, 6, 200)
-    print(f"tip-over fraction: 45 deg {p45:.2f} (S4, crushable legs: {cfg.ref.tipover_p_45deg}), 10 deg {p10:.2f}")
+    print(f"tip-over fraction: 45 deg {p45:.2f} (S4, crushable legs: {NASA_TIPOVER_P_45DEG}), 10 deg {p10:.2f}")
     assert p45 >= 0.6
     assert p10 == 0.0

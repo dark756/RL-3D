@@ -5,8 +5,10 @@ VIKING_REQ_VERTICAL_SPEED_MPS downward or VIKING_REQ_HORIZONTAL_SPEED_MPS sidewa
 limits, S5). Stability follows TN D-7959 (S4 p9-12): the stability distance (CG to the vertical
 planes through each pair of footpads; negative = tipping over) and settling (resting on all three
 footpads with kinetic energy below 0.5 % of the impact energy). The agent shuts the engines off itself
-(brief D7), and a landing only counts once they are off. Tilt and pad-radius limits are Open decision
-O3 (M2): reported, not judged.
+(brief D7), and a landing only counts once they are off. Since 2026-10-10 (O3, brief D20) the first
+contact must also come within Viking's touchdown attitude limits, tilt <= 5 deg and pitch/yaw rate
+<= 7 deg/s (S3 Table 8; spin is not limited), and the lander must settle inside the pad radius
+(EPISODE_ZONES_M) around the target at the origin.
 """
 
 from __future__ import annotations
@@ -49,6 +51,7 @@ class TouchdownReport:
     vz_at_contact: float | None = None          # downward speed (m/s, positive = descending)
     vh_at_contact: float | None = None          # horizontal speed (m/s)
     tilt_at_contact_deg: float | None = None
+    rate_at_contact_dps: float | None = None    # pitch/yaw rate (body x-y), deg/s; spin excluded
     leg_broken: bool = False                    # first contact faster than a leg design limit
     min_stability_m: float = math.inf
     settled: bool = False
@@ -79,6 +82,7 @@ class TouchdownMonitor:
 
     def __init__(self, cfg: Config):
         self.req = cfg.req
+        self.pad_radius = cfg.episode.pad_radius_m
         self.report = TouchdownReport()
         self._impact_ke = 0.0
         self._calm_since: float | None = None
@@ -96,7 +100,7 @@ class TouchdownMonitor:
                 self._judge()
 
     def update(self, t: float, pad_contact, body_contact: bool, v_cg: np.ndarray, ke: float,
-               stability: float, tilt_deg: float, empty: bool, xy) -> None:
+               stability: float, tilt_deg: float, empty: bool, xy, omega_b=(0.0, 0.0, 0.0)) -> None:
         r = self.report
         if not r.touched_down:
             if empty:
@@ -110,13 +114,14 @@ class TouchdownMonitor:
             r.vz_at_contact = float(-v_cg[2])
             r.vh_at_contact = float(math.hypot(v_cg[0], v_cg[1]))
             r.tilt_at_contact_deg = float(tilt_deg)
+            r.rate_at_contact_dps = math.degrees(math.hypot(float(omega_b[0]), float(omega_b[1])))
             r.leg_broken = (r.vz_at_contact > self.req.vertical_speed_mps
                             or r.vh_at_contact > self.req.horizontal_speed_mps)
             self._impact_ke = max(ke, SETTLE_MIN_IMPACT_KE_J)
         if r.settled or r.tipped_over or r.leg_broken:
-            self._judge()
             if r.leg_broken and r.final_xy is None:
                 r.final_tilt_deg, r.final_xy = float(tilt_deg), (float(xy[0]), float(xy[1]))
+            self._judge()
             return
         r.min_stability_m = min(r.min_stability_m, float(stability))
         r.body_strike = r.body_strike or bool(body_contact)
@@ -143,6 +148,7 @@ class TouchdownMonitor:
             "no_body_strike": not r.body_strike,
             "engines_off": r.engines_off,
             "propellant_left_at_touchdown": not r.propellant_exhausted_airborne,
-            "inside_pad_radius": None,     # O3, decided at M2
-            "tilt_within_limit": None,     # O3, decided at M2 (S3 Table 8 suggests 5 deg)
+            "tilt_within_limit": r.tilt_at_contact_deg is not None and r.tilt_at_contact_deg <= q.tilt_deg,
+            "rate_within_limit": r.rate_at_contact_dps is not None and r.rate_at_contact_dps <= q.rate_pitchyaw_dps,
+            "inside_pad_radius": (math.hypot(*r.final_xy) <= self.pad_radius) if r.final_xy is not None else None,
         }

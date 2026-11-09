@@ -41,7 +41,7 @@ def add_plumes(scene: mujoco.MjvScene, sim) -> None:
     """Three nested translucent ellipsoids per engine; length and width grow with actual thrust."""
     tmax = sim.cfg.engine.thrust_max_n
     for k, sid in enumerate(sim.idx.engine_sites):
-        frac = float(sim._last_thrust[k]) / tmax
+        frac = float(sim.last_thrust[k]) / tmax
         if frac < 0.01:
             continue
         pos = sim.data.site_xpos[sid]

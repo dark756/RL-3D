@@ -12,6 +12,7 @@ by `load_config(overrides=...)` (the scripts' ``--set KEY=VALUE``). An overridde
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import typing
@@ -81,8 +82,7 @@ class LegCfg:
 
 @dataclass(frozen=True)
 class AeroCfg:
-    cda_axial_m2: float
-    cda_lateral_m2: float
+    cda_m2: float
 
 
 @dataclass(frozen=True)
@@ -92,7 +92,6 @@ class RadarCfg:
     alt_err_frac: float
     alt_err_m: float
     doppler_splay_deg: float
-    doppler_clock_deg: float
     doppler_min_speed_mps: float
     doppler_err_frac: float
     doppler_err_mps: float
@@ -103,11 +102,15 @@ class RequirementsCfg:
     vertical_speed_mps: float
     horizontal_speed_mps: float
     settle_ke_frac: float
+    tilt_deg: float
+    rate_pitchyaw_dps: float
 
 
 @dataclass(frozen=True)
-class ReferenceCfg:
-    tipover_p_45deg: float
+class SequenceCfg:
+    terminal_speed_mps: float
+    terminal_alt_m: float
+    axial_throttle_limit: float
 
 
 @dataclass(frozen=True)
@@ -126,6 +129,10 @@ class TerrainCfg:
     slope_deg: float
     slope_direction_deg: float
     friction: float
+    slope_p90_deg: float
+    slope_max_deg: float
+    friction_range: tuple[float, ...]
+    hold_ratio: float
 
 
 @dataclass(frozen=True)
@@ -145,6 +152,85 @@ class SimCfg:
         return int(round(self.control_dt_s / self.physics_dt_s))
 
 
+@dataclass(frozen=True)
+class EpisodeCfg:
+    start_height_m: tuple[float, ...]
+    start_offset_m: tuple[float, ...]
+    start_descent_mps: tuple[float, ...]
+    start_sideways_mps: tuple[float, ...]
+    start_tilt_deg: tuple[float, ...]
+    start_rate_dps: float
+    storm_fraction: float
+    zones_m: tuple[float, ...]
+    ceiling_m: float
+    time_limit_s: float
+    tilt_limit_deg: float
+    settle_window_s: float
+
+    @property
+    def pad_radius_m(self) -> float:
+        """A successful landing settles within this distance of the target (the middle zone)."""
+        return self.zones_m[1]
+
+
+@dataclass(frozen=True)
+class RewardCfg:
+    landing: tuple[float, ...]
+    time_per_s: float
+    tilt_free_deg: float
+    tilt_per_deg: float
+    failure: tuple[float, ...]
+    crash_ratio: float
+
+
+@dataclass(frozen=True)
+class ControllerCfg:
+    brake_mps2: float
+    descent_gain_per_s: float
+    position_gain_per_s: float
+    side_speed_mps: float
+    side_gain_per_s: float
+    side_accel_mps2: float
+    side_settle_s: float
+    tilt_max_deg: tuple[float, ...]
+    tilt_rate_dps: tuple[float, ...]
+    attitude_radps: float
+    attitude_damping: float
+    fuel_margin: float
+
+
+@dataclass(frozen=True)
+class CurriculumCfg:
+    start_height_m: tuple[float, ...]
+    start_offset_m: tuple[float, ...]
+    start_descent_mps: tuple[float, ...]
+    start_sideways_mps: tuple[float, ...]
+    start_tilt_deg: tuple[float, ...]
+    start_rate_dps: float
+    step: float
+    promote_success: float
+    window_episodes: float
+    geometric: float
+    mix: float
+
+
+@dataclass(frozen=True)
+class PpoCfg:
+    gamma: float
+    gae_lambda: float
+    learning_rate: float
+    steps_per_update: float
+    minibatch: float
+    epochs: float
+    clip: float
+    target_kl: float
+    value_coef: float
+    max_grad_norm: float
+    net_arch: tuple[float, ...]
+    init_std: float
+    init_cut_prob: float
+
+
 # Order matters: a key is assigned to the FIRST prefix it starts with (MARS_WIND_ before MARS_).
 GROUPS: tuple[tuple[str, str, type], ...] = (
     ("VIKING_ENGINE_", "engine", EngineCfg),
@@ -153,11 +239,16 @@ GROUPS: tuple[tuple[str, str, type], ...] = (
     ("VIKING_AERO_", "aero", AeroCfg),
     ("VIKING_RADAR_", "radar", RadarCfg),
     ("VIKING_REQ_", "req", RequirementsCfg),
-    ("VIKING_REF_", "ref", ReferenceCfg),
+    ("VIKING_SEQ_", "seq", SequenceCfg),
     ("MARS_WIND_", "wind", WindCfg),
     ("MARS_TERRAIN_", "terrain", TerrainCfg),
     ("MARS_", "mars", MarsCfg),
     ("SIM_", "sim", SimCfg),
+    ("EPISODE_", "episode", EpisodeCfg),
+    ("REWARD_", "reward", RewardCfg),
+    ("CTRL_", "ctrl", ControllerCfg),
+    ("CURRICULUM_", "curriculum", CurriculumCfg),
+    ("PPO_", "ppo", PpoCfg),
 )
 
 
@@ -171,11 +262,16 @@ class Config:
     aero: AeroCfg
     radar: RadarCfg
     req: RequirementsCfg
-    ref: ReferenceCfg
+    seq: SequenceCfg
     wind: WindCfg
     terrain: TerrainCfg
     mars: MarsCfg
     sim: SimCfg
+    episode: EpisodeCfg
+    reward: RewardCfg
+    ctrl: ControllerCfg
+    curriculum: CurriculumCfg
+    ppo: PpoCfg
     params: Mapping[str, Param]
     env_path: str
 
@@ -398,6 +494,73 @@ def validate(cfg: Config) -> None:
         problems.append("SIM_CONTACT_TIMECONST_S should be >= 2 x SIM_PHYSICS_DT_S (MuJoCo stability)")
     if sim.sensor_noise_scale < 0:
         problems.append("SIM_SENSOR_NOISE_SCALE must be >= 0")
+    ep, ter, rw = cfg.episode, cfg.terrain, cfg.reward
+    for key, rng in (("EPISODE_START_HEIGHT_M", ep.start_height_m), ("EPISODE_START_OFFSET_M", ep.start_offset_m),
+                     ("EPISODE_START_DESCENT_MPS", ep.start_descent_mps),
+                     ("EPISODE_START_SIDEWAYS_MPS", ep.start_sideways_mps), ("EPISODE_START_TILT_DEG", ep.start_tilt_deg),
+                     ("MARS_TERRAIN_FRICTION_RANGE", ter.friction_range)):
+        if len(rng) != 2 or not 0 <= rng[0] <= rng[1]:
+            problems.append(f"{key} needs a range 'low,high' with 0 <= low <= high")
+    if len(ep.zones_m) != 3 or not 0 < ep.zones_m[0] < ep.zones_m[1] < ep.zones_m[2]:
+        problems.append("EPISODE_ZONES_M needs three radii 'green,pad,arena', each larger than the last")
+    elif ep.start_offset_m[-1] >= ep.zones_m[2]:
+        problems.append("EPISODE_START_OFFSET_M reaches outside the arena (EPISODE_ZONES_M)")
+    if ep.ceiling_m <= ep.start_height_m[-1]:
+        problems.append("EPISODE_CEILING_M must be above the highest start (EPISODE_START_HEIGHT_M)")
+    if ep.start_tilt_deg[-1] >= ep.tilt_limit_deg:
+        problems.append("EPISODE_TILT_LIMIT_DEG must be above the largest start tilt (EPISODE_START_TILT_DEG)")
+    if not 0 <= ep.storm_fraction <= 1:
+        problems.append("EPISODE_STORM_FRACTION must be between 0 and 1")
+    if ep.start_rate_dps < 0 or ep.time_limit_s <= 0 or ep.settle_window_s <= 0:
+        problems.append("need EPISODE_START_RATE_DPS >= 0, EPISODE_TIME_LIMIT_S > 0 and EPISODE_SETTLE_WINDOW_S > 0")
+    if ter.slope_p90_deg <= 0 or ter.slope_max_deg < 0:
+        problems.append("need MARS_TERRAIN_SLOPE_P90_DEG > 0 and MARS_TERRAIN_SLOPE_MAX_DEG >= 0")
+    elif ter.hold_ratio < 0 or (len(ter.friction_range) == 2 and 0 <= ter.slope_max_deg < 90 and
+                                ter.hold_ratio * math.tan(math.radians(ter.slope_max_deg)) > ter.friction_range[1]):
+        problems.append("MARS_TERRAIN_HOLD_RATIO must be >= 0 and leave friction to draw at the steepest slope "
+                        "(HOLD_RATIO x tan(SLOPE_MAX_DEG) <= the top of FRICTION_RANGE)")
+    if len(rw.landing) != 3 or len(rw.failure) != 2 or not rw.failure[0] <= rw.failure[1]:
+        problems.append("REWARD_LANDING needs 3 values and REWARD_FAILURE 2 ('hard,soft', hard <= soft)")
+    if rw.crash_ratio <= 1:
+        problems.append("REWARD_CRASH_RATIO must be > 1 (a multiple of the leg speed limits)")
+    sq, c = cfg.seq, cfg.ctrl
+    if sq.terminal_speed_mps <= 0 or sq.terminal_alt_m <= 0 or not 0 < sq.axial_throttle_limit <= 1:
+        problems.append("need VIKING_SEQ_TERMINAL_SPEED_MPS > 0, _TERMINAL_ALT_M > 0 and 0 < _AXIAL_THROTTLE_LIMIT <= 1")
+    if min(c.brake_mps2, c.descent_gain_per_s, c.position_gain_per_s, c.side_speed_mps, c.side_gain_per_s,
+           c.side_accel_mps2, c.attitude_radps, c.attitude_damping) <= 0 or c.side_settle_s < 0 or c.fuel_margin < 0:
+        problems.append("CTRL_* gains, speeds and accelerations must be positive (SIDE_SETTLE_S, FUEL_MARGIN >= 0)")
+    for key, pair in (("CTRL_TILT_MAX_DEG", c.tilt_max_deg), ("CTRL_TILT_RATE_DPS", c.tilt_rate_dps)):
+        if len(pair) != 2 or not 0 < pair[1] <= pair[0]:
+            problems.append(f"{key} needs 'above the gate, near the ground' with 0 < near <= above")
+    if len(c.tilt_max_deg) == 2 and c.tilt_max_deg[0] >= ep.tilt_limit_deg:
+        problems.append("CTRL_TILT_MAX_DEG must stay below EPISODE_TILT_LIMIT_DEG")
+    axial = 3 * (e.thrust_min_n + sq.axial_throttle_limit * (e.thrust_max_n - e.thrust_min_n))
+    if c.brake_mps2 >= axial / (m.dry_kg + m.start_propellant_kg) - cfg.mars.gravity_mps2:
+        problems.append("CTRL_BRAKE_MPS2 must be below the braking the axial throttle limit allows at the start mass")
+    cu, p = cfg.curriculum, cfg.ppo
+    for key, rng in (("CURRICULUM_START_HEIGHT_M", cu.start_height_m), ("CURRICULUM_START_OFFSET_M", cu.start_offset_m),
+                     ("CURRICULUM_START_DESCENT_MPS", cu.start_descent_mps),
+                     ("CURRICULUM_START_SIDEWAYS_MPS", cu.start_sideways_mps),
+                     ("CURRICULUM_START_TILT_DEG", cu.start_tilt_deg)):
+        if len(rng) != 2 or not 0 <= rng[0] <= rng[1]:
+            problems.append(f"{key} needs a range 'low,high' with 0 <= low <= high")
+    if len(cu.start_height_m) == 2 and cu.start_height_m[0] <= 0:
+        problems.append("CURRICULUM_START_HEIGHT_M must start above the ground")
+    if cu.start_rate_dps < 0 or not 0 < cu.step <= 1 or not 0 < cu.promote_success <= 1 or cu.window_episodes < 10:
+        problems.append("need CURRICULUM_START_RATE_DPS >= 0, 0 < _STEP <= 1, 0 < _PROMOTE_SUCCESS <= 1 and "
+                        "_WINDOW_EPISODES >= 10")
+    if cu.geometric not in (0.0, 1.0) or not 0 <= cu.mix < 1:
+        problems.append("need CURRICULUM_GEOMETRIC 0 or 1 and 0 <= CURRICULUM_MIX < 1")
+    if not 0 < p.gamma < 1 or not 0 < p.gae_lambda <= 1 or min(p.learning_rate, p.clip, p.target_kl, p.value_coef,
+                                                                 p.max_grad_norm, p.init_std) <= 0:
+        problems.append("need 0 < PPO_GAMMA < 1, 0 < PPO_GAE_LAMBDA <= 1 and positive PPO_LEARNING_RATE, _CLIP, "
+                        "_TARGET_KL, _VALUE_COEF, _MAX_GRAD_NORM and _INIT_STD")
+    whole = (p.steps_per_update, p.minibatch, p.epochs) + tuple(p.net_arch)
+    if not p.net_arch or any(v < 1 or v != int(v) for v in whole) or p.minibatch > p.steps_per_update:
+        problems.append("PPO_STEPS_PER_UPDATE, _MINIBATCH (<= steps per update), _EPOCHS and _NET_ARCH must be "
+                        "whole numbers >= 1")
+    if not 0 < p.init_cut_prob < 0.5:
+        problems.append("PPO_INIT_CUT_PROB must be between 0 and 0.5 (D23: the untrained agent keeps the engines on)")
     if problems:
         raise ConfigError("inconsistent configuration:\n  - " + "\n  - ".join(problems))
 
@@ -422,8 +585,10 @@ def derived(cfg: Config) -> dict[str, tuple[float, str, str]]:
         "hover_mdot_start": (hover_mdot, "kg/s", "weight_start / (Isp g0)"),
         "hover_time_start_tank": (m.start_propellant_kg / hover_mdot, "s", "start propellant / hover mdot"),
         "engine_time_constant": (e.t90_s / 2.302585, "s", "T90 / ln 10 (first-order lag)"),
-        "storm_push_max": (0.5 * cfg.mars.air_density_kgpm3 * storm_hi ** 2 * cfg.aero.cda_lateral_m2, "N",
-                           "1/2 rho v^2 CdA_lateral at the top storm wind"),
+        "storm_push_max": (0.5 * cfg.mars.air_density_kgpm3 * storm_hi ** 2 * cfg.aero.cda_m2, "N",
+                           "1/2 rho v^2 CdA at the top storm wind"),
+        "axial_braking_start": (n * (e.thrust_min_n + cfg.seq.axial_throttle_limit * (e.thrust_max_n - e.thrust_min_n))
+                                / start - g, "m/s2", "3 T(axial limit) / start mass - g (vs CTRL_BRAKE_MPS2)"),
         "cg_height_ratio": (m.cg_z_m / cfg.leg.footpad_radius_m, "-", "CG height / footpad radius (S4: 0.566)"),
         "control_substeps": (float(cfg.sim.substeps), "-", "control period / physics step"),
     }

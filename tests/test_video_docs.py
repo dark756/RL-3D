@@ -9,7 +9,7 @@ import numpy as np
 import pytest
 
 ROOT = Path(__file__).resolve().parent.parent
-BACKEND_AGNOSTIC = ["config", "geometry", "vehicle", "aero", "sensors", "touchdown"]
+BACKEND_AGNOSTIC = ["config", "geometry", "vehicle", "aero", "sensors", "navigation", "touchdown"]
 
 
 def test_offscreen_render_and_mp4(make_sim, tmp_path):
@@ -48,7 +48,7 @@ def _public_names(path: Path) -> list[str]:
 def test_readme_explains_every_file_and_function():
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     missing = []
-    for folder in ("lander", "scripts"):
+    for folder in ("lander", "envs", "scripts", "controllers"):
         for path in sorted((ROOT / folder).glob("*.py")):
             if path.name == "__init__.py":
                 continue

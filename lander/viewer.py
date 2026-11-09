@@ -20,13 +20,14 @@ KEY_SPACE, KEY_ENTER = 32, 257     # GLFW key codes
 
 
 def watch(sim, policy: Callable, reset_fn: Callable, speed: float = 1.0, max_seconds: float | None = None,
-          hud: bool = True, hold_after_done_s: float = 2.0) -> None:
+          hud: bool = True, hold_after_done_s: float = 2.0, done_fn: Callable | None = None) -> None:
     """Run `policy(sim) -> Command` in real time (scaled by `speed`) in the passive viewer.
 
     `reset_fn()` must reset the simulator and return the first StepResult; it is called at start and
-    whenever Enter is pressed. After a landing is decided the sim keeps running `hold_after_done_s`
-    seconds and then pauses on the result.
+    whenever Enter is pressed. Once the episode is over (`done_fn(sim, res)`, default: the landing is
+    decided) the sim keeps running `hold_after_done_s` seconds and then pauses on the result.
     """
+    done_fn = done_fn or (lambda s, r: r.report.done)
     flags = {"paused": False, "restart": False}
 
     def on_key(key: int) -> None:            # runs on the viewer thread: only set flags here
@@ -55,7 +56,7 @@ def watch(sim, policy: Callable, reset_fn: Callable, speed: float = 1.0, max_sec
             hold = done_at is not None and sim.t >= done_at + hold_after_done_s
             if not flags["paused"] and not hold:
                 res = sim.step(policy(sim))
-                if res.report.done and done_at is None:
+                if done_at is None and done_fn(sim, res):
                     done_at = sim.t
             else:
                 anchor_wall, anchor_sim = time.perf_counter(), sim.t

@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 from conftest import CLEAN
-from lander.scenarios import make_scenario, run_scenario
+from lander.scenarios import LOW_PROPELLANT_KG, hover_then_cut, make_scenario, run_scenario
 from lander.touchdown import stability_distance
 from lander.vehicle import Command
 
@@ -57,6 +57,26 @@ def test_engines_must_be_cut_before_the_landing_counts(make_sim):
     assert r.settled and not r.success and r.failures() == ["engines_off"]
     res = sim.step(Command((0.0, 0.0, 0.0), engines_off=True))
     assert res.report.success
+
+
+def test_touchdown_attitude_and_pad_limits(make_sim):
+    """O3 (2026-10-10): tilt <= 5 deg and pitch/yaw rate <= 7 deg/s at first contact (S3 Table 8); settle on the pad."""
+    sim = make_sim(CLEAN)
+
+    def land(**kw):
+        sim.reset(initial_state=sim.state_above_ground(0.2, velocity=(0.0, 0.0, -1.5),
+                                                       propellant_kg=LOW_PROPELLANT_KG, **kw))
+        while sim.t < 6.0 and not sim.monitor.report.done:
+            sim.step(hover_then_cut(sim))
+        return sim.monitor.report
+
+    tilted = land(tilt_deg=8.0)
+    assert tilted.tilt_at_contact_deg > 5.0 and "tilt_within_limit" in tilted.failures()
+    pitching = land(omega=(0.0, math.radians(10.0), 0.0))
+    assert pitching.rate_at_contact_dps > 7.0 and "rate_within_limit" in pitching.failures()
+    assert land(omega=(0.0, 0.0, math.radians(9.0))).success          # spin is not limited (no roll control)
+    off_pad = land(xy=(30.0, 0.0))
+    assert off_pad.failures() == ["inside_pad_radius"]
 
 
 def test_out_of_propellant_is_flagged(make_sim):

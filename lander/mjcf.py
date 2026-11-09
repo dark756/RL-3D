@@ -22,7 +22,7 @@ from .geometry import BODY_BOTTOM_Z_M, LanderGeometry, build_geometry, hexagon_v
 from .vehicle import MassModel
 
 GROUP_TERRAIN, GROUP_LANDER, GROUP_DECOR, GROUP_COLLISION = 0, 1, 2, 3
-TARGET_RING_M = 10.0          # radius of the decorative marker ring around the target (visual only)
+ZONE_RGBA = ("0.35 0.85 0.35 0.9", "0.96 0.84 0.30 0.9")   # dashed rings: green-zone edge, pad edge (visual only)
 
 BODY_LONG_SIDE_M = 1.09       # S2: hexagonal body; engines on the long sides
 BODY_SHORT_SIDE_M = 0.56      # S2: legs attach on the short sides
@@ -90,11 +90,12 @@ def build_mjcf(cfg: Config, geom: LanderGeometry | None = None) -> str:
     housing_c = np.array([0.0, 0.0, bottom - 0.5 * housing_drop])
     housing_h = np.array([0.5 * housing_w, 0.5 * housing_w, 0.5 * housing_drop])
     r_pad = geom.footpad_radius
-    ring = "\n".join(
+    ring = "\n".join(                     # one 1.2 m dash every ~2.5 m (at least 16 per ring)
         f'      <geom class="decor" type="box" size="0.6 0.12 0.005" '
-        f'pos="{_v(TARGET_RING_M * math.cos(a), TARGET_RING_M * math.sin(a), 0.01)}" '
-        f'quat="{_zquat(a + math.pi / 2)}" rgba="0.96 0.84 0.30 0.9"/>'
-        for a in np.linspace(0.0, 2.0 * math.pi, 16, endpoint=False))
+        f'pos="{_v(radius * math.cos(a), radius * math.sin(a), 0.01)}" '
+        f'quat="{_zquat(a + math.pi / 2)}" rgba="{rgba}"/>'
+        for radius, rgba in zip(cfg.episode.zones_m[:2], ZONE_RGBA)
+        for a in np.linspace(0.0, 2.0 * math.pi, max(16, int(2.0 * math.pi * radius / 2.5)), endpoint=False))
 
     x = []
     x.append(f"""<mujoco model="viking_lander">

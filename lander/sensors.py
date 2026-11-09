@@ -32,6 +32,7 @@ class SensorReadings:
     altitude: float            # radar altimeter: range to the nearest ground point (m); NaN = invalid
     doppler_beam: np.ndarray   # (4,) closing speed along each beam (m/s); NaN = no lock
     doppler_vel: np.ndarray    # (3,) body-frame velocity from the locked beams; NaN if < 3 beams
+    radar_t: float = 0.0       # when the radars last sampled (their readings are held until the next sample)
 
     @property
     def altitude_valid(self) -> bool:
@@ -53,6 +54,7 @@ class SensorSuite:
         self.rng = rng
         self.noise_scale = self.cfg.sim.sensor_noise_scale if noise_scale is None else float(noise_scale)
         self._next = -math.inf
+        self._radar_t = -math.inf
         self._altitude = math.nan
         self._beam = np.full(len(self.beams), np.nan)
         self._vel = np.full(3, np.nan)
@@ -62,11 +64,13 @@ class SensorSuite:
         """Read all sensors at time t. `origin`, `rot`, `v_origin` describe the lander frame in the world."""
         if t >= self._next - 1e-9:
             self._next = t + self.cfg.radar.period_s
+            self._radar_t = t
             p_ant = origin + rot @ self.geom.radar_pos
             v_ant = v_origin + cross3(omega_world, rot @ self.geom.radar_pos)
             self._altitude = self._read_altimeter(p_ant, rot, terrain)
             self._beam, self._vel = self._read_doppler(p_ant, v_ant, rot, terrain)
-        return SensorReadings(t, f_body.copy(), omega_body.copy(), self._altitude, self._beam.copy(), self._vel.copy())
+        return SensorReadings(t, f_body.copy(), omega_body.copy(), self._altitude, self._beam.copy(), self._vel.copy(),
+                              self._radar_t)
 
     def _read_altimeter(self, p_ant: np.ndarray, rot: np.ndarray, terrain) -> float:
         rc = self.cfg.radar

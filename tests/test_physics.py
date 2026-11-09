@@ -58,7 +58,7 @@ def test_mass_flow_equals_thrust_integral(make_sim):
     used = {"kg": 0.0}
 
     def tally(s, k):   # after each physics step: the actual thrust of that step
-        used["kg"] += s._last_thrust.sum() / isp_g0 * s.dt
+        used["kg"] += s.last_thrust.sum() / isp_g0 * s.dt
 
     m0 = sim.vehicle.propellant
     for i in range(125):                                  # 5 s of varying throttle
@@ -73,7 +73,7 @@ def test_engines_off_command_is_permanent(make_sim, cfg):
     sim = make_sim(CLEAN)
     sim.reset(initial_state=sim.state_above_ground(100.0))
     log = []
-    cb = lambda s, k: log.append((s.t, float(s._last_thrust.sum())))
+    cb = lambda s, k: log.append((s.t, float(s.last_thrust.sum())))
     for _ in range(25):
         sim.step(Command(sim.hover_trim()), substep_callback=cb)
     t_cut, lit = sim.t, log[-1][1]

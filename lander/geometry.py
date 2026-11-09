@@ -33,6 +33,19 @@ def cross3(a, b) -> np.ndarray:
     return np.array([a1 * b2 - a2 * b1, a2 * b0 - a0 * b2, a0 * b1 - a1 * b0])
 
 
+def mat_vec(rows, v) -> tuple[float, float, float]:
+    """rows @ v in plain floats, for a 3x3 matrix given as three rows (the physics step's fast path).
+
+    Each row is rounded exactly like numpy's BLAS product on the machine M1-M3 ran on:
+    fma(r2, v2, fma(r0, v0, r1 v1)). So the 2026-10-11 speed-up changed no result, and older episode
+    logs still replay bit for bit (D10). `math.fma` rounds once, the same on every machine.
+    """
+    (a0, a1, a2), (b0, b1, b2), (c0, c1, c2) = rows
+    x, y, z = v
+    fma = math.fma
+    return fma(a2, z, fma(a0, x, a1 * y)), fma(b2, z, fma(b0, x, b1 * y)), fma(c2, z, fma(c0, x, c1 * y))
+
+
 @dataclass(frozen=True)
 class LanderGeometry:
     """Everything positional about the lander, in the lander frame."""
@@ -65,11 +78,10 @@ def build_geometry(cfg: Config) -> LanderGeometry:
     footpads = np.array([lc.footpad_radius_m * unit_azimuth(a) + np.array([0.0, 0.0, lc.footpad_z_m]) for a in az])
     engine_pos = np.array([[x, y, BODY_BOTTOM_Z_M] for x, y in zip(ec.x_m, ec.y_m)])
 
-    rc = cfg.radar
-    sp, ck = math.radians(rc.doppler_splay_deg), math.radians(rc.doppler_clock_deg)
+    sp = math.radians(cfg.radar.doppler_splay_deg)
     beams = []
-    for k in range(DOPPLER_BEAMS):
-        phi = ck + k * 2.0 * math.pi / DOPPLER_BEAMS
+    for k in range(DOPPLER_BEAMS):      # in the X-Z and Y-Z planes (Viking's extra 45 deg about Z was cut 2026-10-10)
+        phi = k * 2.0 * math.pi / DOPPLER_BEAMS
         beams.append(np.array([math.sin(sp) * math.cos(phi), math.sin(sp) * math.sin(phi), -math.cos(sp)]))
 
     return LanderGeometry(

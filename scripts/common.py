@@ -51,7 +51,9 @@ def summarize(report, telemetry) -> str:
         + ("  -> LEG BROKEN" if r.leg_broken else ""),
         f"min stability distance {r.min_stability_m:.3f} m, settled: {r.settled}, "
         f"tipped over: {r.tipped_over}, body strike: {r.body_strike}",
-        "criteria: " + ", ".join(f"{k}={'n/a (M2)' if v is None else v}" for k, v in r.criteria.items()),
-        "RESULT: " + ("SUCCESS" if r.success else ("FAILED: " + ", ".join(r.failures()) if r.done else "undecided")),
+        "criteria: " + ", ".join(f"{k}={'n/a' if v is None else v}" for k, v in r.criteria.items()),
+        "RESULT: " + ("SUCCESS" if r.success else
+                      "LANDED OFF THE PAD" if r.done and r.failures() == ["inside_pad_radius"] else
+                      "FAILED: " + ", ".join(r.failures()) if r.done else "undecided"),
     ]
     return "\n".join(lines)
